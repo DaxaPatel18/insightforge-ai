@@ -1,0 +1,62 @@
+# ==============================================================================
+# InsightForge AI - Production Backend Containerfile
+# ==============================================================================
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install build essentials if needed for binary compilation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install python dependencies into a wheel directory or virtualenv
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Final Runtime Image
+FROM python:3.11-slim AS runtime
+
+# System runtime libraries for PostgreSQL client, PyMuPDF, etc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create dedicated non-root application user
+RUN groupadd -g 1000 insightforge && \
+    useradd -u 1000 -g insightforge -m -s /bin/bash insightforge
+
+WORKDIR /app
+
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy backend application source code
+COPY backend/ /app/
+
+# Create persistent storage directories for uploads, artifacts, and ChromaDB vector store
+RUN mkdir -p /app/uploads /app/data /app/chroma_db && \
+    chown -R insightforge:insightforge /app
+
+USER insightforge
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000 \
+    WORKERS=1 \
+    ENVIRONMENT=production
+
+EXPOSE 8000
+
+# Healthcheck probe hitting /health endpoint
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://127.0.0.1:8000/health || exit 1
+
+# Production multi-worker entrypoint
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS} --proxy-headers --forwarded-allow-ips '*'"]

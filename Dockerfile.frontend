@@ -1,0 +1,33 @@
+# ==============================================================================
+# InsightForge AI - Production Frontend Containerfile
+# ==============================================================================
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+# Install dependencies first for optimal Docker layer caching
+COPY frontend/package*.json ./
+RUN npm ci
+
+# Copy frontend source code and compile production Vite bundle
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: High-Performance Nginx Web Server
+FROM nginx:alpine AS runtime
+
+# Remove default nginx static assets
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy compiled SPA bundle from build stage
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy optimized Nginx reverse proxy configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80
+
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://127.0.0.1/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

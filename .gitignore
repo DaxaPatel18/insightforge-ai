@@ -1,0 +1,166 @@
+# ==============================================================================
+# InsightForge AI - Root Git Ignore Configuration
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment & Secrets (Exclude actual env files; allow templates)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+*.env
+!.env.example
+!.env.*.example
+!.env.production.example
+
+# Cryptographic Keys, Certificates & Tokens
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+secrets/
+credentials/
+
+# ------------------------------------------------------------------------------
+# 2. Databases & Backups
+# ------------------------------------------------------------------------------
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+insightforge.db
+backend/insightforge.db
+
+# Database backups & dumps
+*.backup*
+*.bak
+*.dump
+*.sql
+test_pg_data/
+backend/test_pg_data/
+
+# ------------------------------------------------------------------------------
+# 3. User Uploads & Media Files
+# ------------------------------------------------------------------------------
+/uploads/*
+!/uploads/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
+backend/data/knowledge_docs/*
+!backend/data/knowledge_docs/.gitkeep
+
+# ------------------------------------------------------------------------------
+# 4. Generated Artifacts & Reports
+# ------------------------------------------------------------------------------
+/reports/*
+!/reports/.gitkeep
+backend/reports/*
+!backend/reports/.gitkeep
+data/reports/*
+!data/reports/.gitkeep
+backend/data/reports/*
+!backend/data/reports/.gitkeep
+*.pdf
+!docs/*.pdf
+
+# ------------------------------------------------------------------------------
+# 5. Machine Learning Models & Checkpoints
+# ------------------------------------------------------------------------------
+/models/*
+!/models/.gitkeep
+backend/models/*
+!backend/models/.gitkeep
+data/models/*
+!data/models/.gitkeep
+backend/data/models/*
+!backend/data/models/.gitkeep
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# ------------------------------------------------------------------------------
+# 6. ChromaDB Vector Embeddings & Index Storage
+# ------------------------------------------------------------------------------
+/chroma_db/*
+!/chroma_db/.gitkeep
+backend/chroma_db/*
+!backend/chroma_db/.gitkeep
+data/chroma_db/*
+!data/chroma_db/.gitkeep
+backend/data/chroma_db/*
+!backend/data/chroma_db/.gitkeep
+.chroma/
+*.parquet
+
+# ------------------------------------------------------------------------------
+# 7. Frontend / Node
+# ------------------------------------------------------------------------------
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.stylelintcache
+
+# ------------------------------------------------------------------------------
+# 8. Python / Backend Runtime
+# ------------------------------------------------------------------------------
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+backend/.venv/
+ENV/
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+backend/audit_results.json
+
+# ------------------------------------------------------------------------------
+# 9. IDE, Operating System & Temp Scratch
+# ------------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+temp/
+scratch/

@@ -1,0 +1,13 @@
+order_id,product_category,units_sold,unit_price,total_revenue,region,customer_segment
+1001,Electronics,4,249.99,999.96,North America,Enterprise
+1002,Software,12,49.00,588.00,Europe,SMB
+1003,Hardware,2,799.50,1599.00,Asia Pacific,Enterprise
+1004,Services,1,1200.00,1200.00,North America,Mid-Market
+1005,Electronics,8,89.95,719.60,Latin America,Consumer
+1006,Software,25,19.99,499.75,Europe,Enterprise
+1007,Hardware,5,320.00,1600.00,Asia Pacific,SMB
+1008,Services,3,450.00,1350.00,North America,Enterprise
+1009,Electronics,1,1499.00,1499.00,Europe,Consumer
+1010,Software,15,35.00,525.00,North America,Mid-Market
+1011,Hardware,7,210.00,1470.00,Latin America,SMB
+1012,Services,2,850.00,1700.00,Asia Pacific,Enterprise
