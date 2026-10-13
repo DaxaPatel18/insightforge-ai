@@ -167,25 +167,71 @@ export interface MLTrainResult {
   sample_explanations: LocalShapSample[];
 }
 
-const ENV_BACKEND_URL = (
+const RAW_ENV_URL = (
   (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL)) ||
   ''
-).replace(/\/+$/, '');
+).trim();
+
+// Live Render backend URL fallback if VITE_API_URL was omitted during static site build
+export const KNOWN_RENDER_BACKEND = 'https://insightforge-api-ij9q.onrender.com';
+
+function normalizeBackendUrl(url: string): string {
+  if (!url) return '';
+  let clean = url.trim().replace(/\/+$/, '');
+  // Prevent duplicate /api when path also begins with /api
+  if (clean.endsWith('/api')) {
+    clean = clean.slice(0, -4).replace(/\/+$/, '');
+  }
+  return clean;
+}
+
+const ENV_BACKEND_URL = normalizeBackendUrl(RAW_ENV_URL);
+
+export function buildApiUrl(base: string, path: string): string {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (!base) {
+    return cleanPath;
+  }
+  const cleanBase = base.replace(/\/+$/, '');
+  // Prevent duplicate /api if base ends with /api and path starts with /api/
+  if (cleanBase.endsWith('/api') && cleanPath.startsWith('/api/')) {
+    return `${cleanBase}${cleanPath.slice(4)}`;
+  }
+  return `${cleanBase}${cleanPath}`;
+}
+
+export function isLocalhost(): boolean {
+  if (typeof window === 'undefined') return true;
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '';
+}
 
 // Track active and verified connection URL
 let activeBaseUrl: string | null = null;
 
 export function getApiBaseUrls(): string[] {
   const urls: string[] = [];
+
   if (ENV_BACKEND_URL) {
     urls.push(ENV_BACKEND_URL);
   }
-  // Try relative path first (seamlessly handled by Vite proxy / reverse proxy)
-  urls.push('');
-  // Explicit IPv4 loopback (prevents Windows IPv6 [::1] connection refused bug)
-  urls.push('http://127.0.0.1:8000');
-  // Localhost fallback
-  urls.push('http://localhost:8000');
+
+  if (isLocalhost()) {
+    // Preserve local Vite development proxy configuration:
+    // Relative path '' routes through the Vite proxy (vite.config.ts)
+    urls.push('');
+    // Explicit IPv4 loopback (prevents Windows IPv6 [::1] connection refused bug)
+    urls.push('http://127.0.0.1:8000');
+    // Localhost fallback
+    urls.push('http://localhost:8000');
+  } else {
+    // Production environment (Render Static Site / remote domain):
+    // Fall back to known live Render backend if VITE_API_URL wasn't provided at build time
+    if (!ENV_BACKEND_URL) {
+      urls.push(KNOWN_RENDER_BACKEND);
+    }
+  }
+
   return Array.from(new Set(urls));
 }
 
@@ -308,11 +354,12 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   const candidates: string[] = [];
 
   if (activeBaseUrl !== null) {
-    candidates.push(activeBaseUrl === '' ? normalizedPath : `${activeBaseUrl}${normalizedPath}`);
+    const candidate = buildApiUrl(activeBaseUrl, normalizedPath);
+    candidates.push(candidate);
   }
 
   for (const base of getApiBaseUrls()) {
-    const candidate = base === '' ? normalizedPath : `${base}${normalizedPath}`;
+    const candidate = buildApiUrl(base, normalizedPath);
     if (!candidates.includes(candidate)) {
       candidates.push(candidate);
     }
@@ -329,6 +376,14 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
         activeBaseUrl = null;
         continue;
       }
+      // If we received an HTML response for an API route, this indicates an SPA static fallback
+      // (e.g. request hit the static site instead of the API server). Try next candidate.
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/html') && normalizedPath.startsWith('/api') && candidates.length > 1) {
+        lastRes = res;
+        activeBaseUrl = null;
+        continue;
+      }
       activeBaseUrl = url.includes('://') ? new URL(url).origin : '';
       return res;
     } catch (err: any) {
@@ -341,27 +396,101 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     return lastRes;
   }
 
+  const primaryTarget = candidates[0] || (ENV_BACKEND_URL || 'FastAPI backend');
   throw new Error(
-    `Unable to connect to FastAPI backend at http://127.0.0.1:8000. Please verify the backend is running. (${lastError?.message || 'Failed to fetch'})`
+    `Unable to connect to FastAPI backend at ${primaryTarget}. Please verify the backend is running. (${lastError?.message || 'Failed to fetch'})`
   );
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+
   if (!res.ok) {
-    let message = `Server responded with status ${res.status} (${res.statusText})`;
-    try {
-      const errJson = await res.json();
-      if (errJson && errJson.detail) {
-        message = typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail);
+    let message = `Server responded with status ${res.status} (${res.statusText || 'Error'})`;
+
+    if (isJson) {
+      try {
+        const text = await res.text();
+        if (text && text.trim()) {
+          const errJson = JSON.parse(text);
+          if (errJson && errJson.detail) {
+            message = typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail);
+          } else if (errJson && errJson.message) {
+            message = typeof errJson.message === 'string' ? errJson.message : JSON.stringify(errJson.message);
+          }
+        }
+      } catch {
+        // Fall back to default message if JSON parsing fails
       }
-    } catch {
-      // ignore
+    } else {
+      try {
+        const text = await res.text();
+        const trimmed = text.trim();
+        if (trimmed && !trimmed.startsWith('<')) {
+          message = trimmed.slice(0, 300);
+        } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+          message = `Backend service is temporarily unavailable or spinning up (status ${res.status}). Render free instances may take 30-60s to wake up.`;
+        } else if (trimmed.startsWith('<')) {
+          message = `Received HTML response instead of JSON (status ${res.status}). Please check API endpoint routing.`;
+        }
+      } catch {
+        // ignore
+      }
     }
+
     const error = new Error(message) as Error & { status?: number };
     error.status = res.status;
     throw error;
   }
-  return res.json();
+
+  // Response is ok (2xx)
+  if (res.status === 204) {
+    return {} as T;
+  }
+
+  // If response has non-JSON content-type
+  if (!isJson) {
+    let text = '';
+    try {
+      text = await res.text();
+    } catch {
+      // ignore
+    }
+    const trimmed = text.trim();
+    if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.startsWith('<')) {
+      const error = new Error(
+        'The server returned an HTML webpage instead of API JSON data. This usually indicates the API request reached the frontend static site instead of the FastAPI backend. Please verify VITE_API_URL.'
+      ) as Error & { status?: number };
+      error.status = res.status;
+      throw error;
+    }
+    if (!trimmed) {
+      return {} as T;
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      const error = new Error(`Received unexpected non-JSON response from server (status ${res.status})`) as Error & { status?: number };
+      error.status = res.status;
+      throw error;
+    }
+  }
+
+  // Content-Type is JSON: read as text first to safely guard against empty bodies or malformed JSON
+  try {
+    const text = await res.text();
+    if (!text || !text.trim()) {
+      return {} as T;
+    }
+    return JSON.parse(text);
+  } catch (parseErr: any) {
+    const error = new Error(
+      `Failed to parse server response as JSON (${parseErr.message || 'Malformed JSON'}). Check backend status.`
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
 }
 
 /** Check FastAPI backend health */
@@ -693,8 +822,11 @@ export async function downloadReportPdf(reportId: string, filename = `InsightFor
   if (!res.ok) {
     let errorDetail = 'Failed to download PDF report';
     try {
-      const errJson = await res.json();
-      errorDetail = errJson.detail || errorDetail;
+      const text = await res.text();
+      if (text && text.trim().startsWith('{')) {
+        const errJson = JSON.parse(text);
+        errorDetail = errJson.detail || errorDetail;
+      }
     } catch {
       // response might not be json
     }
@@ -725,8 +857,31 @@ export async function downloadReportPdf(reportId: string, filename = `InsightFor
 }
 
 export function getReportPdfDownloadUrl(reportId: string): string {
-  const base = activeBaseUrl || ENV_BACKEND_URL || 'http://127.0.0.1:8000';
-  return `${base}/api/reports/${reportId}/pdf`;
+  const base = activeBaseUrl || ENV_BACKEND_URL || (isLocalhost() ? 'http://127.0.0.1:8000' : KNOWN_RENDER_BACKEND);
+  return buildApiUrl(base, `/api/reports/${reportId}/pdf`);
+}
+
+export interface DSARPayload {
+  request_type: string;
+  full_name: string;
+  email: string;
+  message: string;
+}
+
+export interface DSARResponse {
+  success: boolean;
+  request_id: string;
+  message: string;
+  created_at: string;
+}
+
+export async function submitDSAR(payload: DSARPayload): Promise<DSARResponse> {
+  const res = await apiFetch('/api/contact/dsar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<DSARResponse>(res);
 }
 
 export async function deleteReport(reportId: string): Promise<{ message: string }> {

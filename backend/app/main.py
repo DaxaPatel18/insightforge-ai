@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +28,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS for frontend access (supporting Vite dev ports, previews, and loopback variants)
+# Configure CORS for frontend access
+# 1. Base allowed origins (Localhost development ports + Default Render static site production origin)
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -41,15 +43,31 @@ origins = [
     "http://127.0.0.1:4173",
     "http://localhost:8080",
     "http://127.0.0.1:8080",
-    "https://circulate-boastful-scratch.ngrok-free.dev",
+    "https://insightforge-ai.onrender.com",
 ]
+
+# 2. Allow production frontend origin configured through FRONTEND_ORIGIN environment variable
+frontend_origin_env = os.getenv("FRONTEND_ORIGIN", "").strip()
+if frontend_origin_env:
+    for orig in frontend_origin_env.split(","):
+        cleaned = orig.strip().rstrip("/")
+        if cleaned and cleaned not in origins:
+            origins.append(cleaned)
+
+# 3. Additional CORS origins if defined in environment
+additional_origins_env = os.getenv("ADDITIONAL_CORS_ORIGINS", "").strip()
+if additional_origins_env:
+    for orig in additional_origins_env.split(","):
+        cleaned = orig.strip().rstrip("/")
+        if cleaned and cleaned not in origins:
+            origins.append(cleaned)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition", "Content-Type", "Content-Length"],
 )

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Shield, CheckCircle2, User, Send, FileQuestion, Loader2, AlertCircle, MapPin } from 'lucide-react';
+import { submitDSAR } from '../lib/api';
 
 export const ContactPage: React.FC = () => {
   const [requestType, setRequestType] = useState<string>('privacy_dsar');
@@ -17,21 +18,12 @@ export const ContactPage: React.FC = () => {
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/contact/dsar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          request_type: requestType,
-          full_name: fullName.trim(),
-          email: email.trim(),
-          message: message.trim(),
-        }),
+      const data = await submitDSAR({
+        request_type: requestType,
+        full_name: fullName.trim(),
+        email: email.trim(),
+        message: message.trim(),
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Failed to submit request');
-      }
-      const data = await res.json();
       setRequestId(data.request_id);
       setSubmitted(true);
     } catch (err: any) {
